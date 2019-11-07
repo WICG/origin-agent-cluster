@@ -78,14 +78,14 @@ In particular, when creating a document or worker, we use the following algorith
 1. Otherwise, if an agent cluster keyed by the site in question exists, use that agent cluster.
     * Example: `https://example.com/` was loaded without origin isolation, and embeds an iframe for `https://example.com/` which also loads without origin isolation.
     * Example: `https://example.com/` was loaded without origin isolation, but embeds an iframe for `https://example.com/` which loads with origin isolation. In this case the iframe will not be origin-isolated, even though it was requested, because we don't want to separate it from the existing site-keyed documents.
-1. If no such agent clusters exist, and the origin policy contains an `"origin_isolated"` member set to `"best-effort"`, then create a new agent clustere keyed by origin, and use it.
+1. If no such agent clusters exist, and the origin policy contains an `"origin_isolated"` member not set to `"none"`, then create a new agent cluster keyed by origin, and use it.
     * Example: a new tab is created which loads `https://example.com/`, whose origin policy specifies origin isolation.
 1. Otherwise, create a new agent cluster keyed by site.
     * Example: a new tab is created which loads `https://example.com/`, whose origin policy does not specify origin isolation.
 
 This will automatically cause `SharedArrayBuffer`s to no longer be shareable cross-origin, because of the agent cluster check in [StructuredDeserialize](https://html.spec.whatwg.org/multipage/structured-data.html#structureddeserialize). We'd also need to add a check to the [`document.domain` setter](https://html.spec.whatwg.org/multipage/origin.html#dom-document-domain) to make it throw. (Ideally we'd find some way of restructuring the existing checks in `document.domain` so that they are also tied to agent cluster boundaries.)
 
-Any other value besides `"best-effort"` will be ignored, giving the same site-keyed behavior as the current specification.
+The criteria of looking for `"origin_isolated"` not set to `"none"`, instead of specifically looking for `"best-effort"`, is done to increase future compatibility. See more on this [below](#the-best-effort-string). In the meantime, user agents should warn for any unknown values, explaining to the web developer that the unknown value is being treated as `"best-effort"`.
 
 ### More complicated example
 
@@ -142,7 +142,7 @@ Given the choice of origin policy to deliver this, why did we choose a new top-l
 
 It turns out, both of these mechanisms are designed for dealing with embedded content, and as such have inheritance models that don't make much sense for origin isolation. If you want to isolate your own origin, that doesn't necessarily mean anything about how your subframes should behave—especially considering that the effects of feature/document policy are not limited to same-origin, or even same-site subframes.
 
-### The `"best-effort"` string
+### String-based enumeration
 
 We originally considered `"origin_isolated": true` for configuring origin isolation. However, a string-based enumeration is more extensible in case we want to add more modes in the future. Some ideas that have been thrown around:
 
@@ -151,6 +151,8 @@ We originally considered `"origin_isolated": true` for configuring origin isolat
 * `"for-performance"` / `"event-loop-isolated"`, which would tell the user agent that the main goal of isolation is performance isolation, and thus it could consider or prefer different strategies like using separate threads instead of separate processes.
 
 * `"non-scriptable"`, which would tell the user agent that no degree of performance or process isolation is required, but the web application still wants to prevent synchronous cross-realm scripting. This could be useful to increase encapsulation.
+
+The proposal's processing model is designed to be forward-compatible in the sense that if user agents add new values like these in the future, and web applications start using them, user agents that don't support the new values will instead treat them as `"best-effort"`. This is better than the alternative, of treating unknown values as `"none"`, which would fail to achieve any origin isolation in those user agents.
 
 ### Opt-in, instead of implicit, origin isolation
 
