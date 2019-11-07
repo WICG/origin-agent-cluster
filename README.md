@@ -74,12 +74,12 @@ In particular, when creating a document or worker, we use the following algorith
 
 1. If an agent cluster keyed by the origin in question exists, use that agent cluster.
     * Example: `https://example.com/` was loaded with origin isolation, and embeds an iframe for `https://example.com/` which loads with origin isolation.
-    * Example: `https://example.com/` was loaded with origin isolation, and embeds an iframe for `https://example.com/` which loads without origin isolation. In this case the iframe will still be origin-isolated; once a given browsing context group has `https://example.com/` in its list of isolated origins (i.e., its agent cluster map keys), there is no going back for that browsing context group.
-1. If no such agent cluster exists, and the origin policy contains an `"origin_isolated"` member set to `"best-effort"`, then create a new agent clustered keyed by origin, and use it.
-    * Example: `https://example.com/` was loaded without origin isolation, but embeds an iframe for `https://example.com/` which loads with origin isolation.
-    * Example: a new tab is created which loads `https://example.com/`, whose origin policy specifies origin isolation.
+    * Example: `https://example.com/` was loaded with origin isolation, but embeds an iframe for `https://example.com/` which loads without origin isolation. In this case the iframe will still be origin-isolated; once a given browsing context group has `https://example.com/` in its list of isolated origins (i.e., its agent cluster map keys), there is no going back for that browsing context group.
 1. Otherwise, if an agent cluster keyed by the site in question exists, use that agent cluster.
     * Example: `https://example.com/` was loaded without origin isolation, and embeds an iframe for `https://example.com/` which also loads without origin isolation.
+    * Example: `https://example.com/` was loaded without origin isolation, but embeds an iframe for `https://example.com/` which loads with origin isolation. In this case the iframe will not be origin-isolated, even though it was requested, because we don't want to separate it from the existing site-keyed documents.
+1. If no such agent clusters exist, and the origin policy contains an `"origin_isolated"` member set to `"best-effort"`, then create a new agent clustere keyed by origin, and use it.
+    * Example: a new tab is created which loads `https://example.com/`, whose origin policy specifies origin isolation.
 1. Otherwise, create a new agent cluster keyed by site.
     * Example: a new tab is created which loads `https://example.com/`, whose origin policy does not specify origin isolation.
 
