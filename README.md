@@ -101,7 +101,7 @@ The nuances of this proposal come into play under the following scenarios:
 
 * When allocating a process-per-origin is infeasible, e.g. because you are operating on a low-memory device or have already allocated a ton of processes. In such scenarios the browser can use the different hints to prioritize how it allocates processes, e.g. prioritizing protection from side-channel attacks above allowing memory measurement. 
 
-* When alternate isolation techniques are available, which give some but not all of the benefits as proccess isolation. For example, Blink is exploring a "multiple Blink threads" project, which would provide isolated event loops, but not side-channel protection. A site which expressed a preference only for isolated event loops could thus be given a new thread, instead of a new process, saving resources.
+* When alternate isolation techniques are available, which give some but not all of the benefits as proccess isolation. For example, Blink is exploring a ["multiple Blink isolates/threads"](https://docs.google.com/document/d/12wEWJsZmxVnNwVGuxuEJF4922OWUr4fCs1xKHi9mTiI/edit#heading=h.g6fq85as9ptv) project, which would provide isolated event loops and heaps, but not full side-channel protection. A site which expressed a preference only for isolated event loops could thus be given a new thread, instead of a new process, saving resources.
 
 ## How it works
 
