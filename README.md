@@ -145,23 +145,23 @@ This will automatically cause `SharedArrayBuffer`s to no longer be shareable cro
 Consider the following scenario:
 
 * `https://example.org/` embeds an iframe for `https://a.example.com/` which embeds an iframe for `https://b.example.com/1`
-* We open tab #1 to `https://example.org/`. Both `https://a.example.com/` and `https://b.example.com/1` responses point to origin policies with `"origin_isolated": "best-effort"` set.
+* We open tab #1 to `https://example.org/`. Both `https://a.example.com/` and `https://b.example.com/1` responses point to origin policies with `"isolation": true` set.
 
 (To simplify this example, assume at all times that we use "blocking" origin policies, i.e. no [async updates](https://github.com/WICG/origin-policy/issues/10) are involved.)
 
 Now, things get fun:
 
-* While we have tab #1 open, the server operator updates both `https://a.example.com/.well-known/origin-policy` and `https://b.example.com/.well-known/origin-policy` to set `"origin_isolated": "none"`.
+* While we have tab #1 open, the server operator updates both `https://a.example.com/.well-known/origin-policy` and `https://b.example.com/.well-known/origin-policy` to set `"isolation": false`.
 * Then, in tab #1, `https://a.example.com/` inserts a new iframe, pointing to `https://b.example.com/2`. Since the `https://b.example.com/` policy on the server has been updated, the response used for creating this second child iframe is no longer requesting origin isolation.
 * This `https://b.example.com/2` iframe inserts an iframe for `https://c.example.com/`, which has no origin policy. Then `https://b.example.com/2` tries to `postMessage()` a `SharedArrayBuffer` to `https://c.example.com/`.
 
 What happens?
 
-The answer that the above specification plan gives is that the `postMessage()` fails. Within the browsing context group (i.e. tab #1), `https://b.example.com/` is in the list of isolated origins, so even though the `https://b.example.com/2` iframe was loaded with an origin policy saying `"origin_isolated": "none"`, it still gets origin-isolated.
+The answer that the above specification plan gives is that the `postMessage()` fails. Within the browsing context group (i.e. tab #1), `https://b.example.com/` is in the list of isolated origins, so even though the `https://b.example.com/2` iframe was loaded with an origin policy saying `"isolation": false`, it still gets origin-isolated.
 
 OK, let's go further.
 
-* Now we open up a new tab to `https://example.org/`, tab #2. Because of the server update, the origin policies corresponding to the nested iframes for `https://a.example.com/` and `https://b.example.com/1` have `"origin_isolated": "none"` set.
+* Now we open up a new tab to `https://example.org/`, tab #2. Because of the server update, the origin policies corresponding to the nested iframes for `https://a.example.com/` and `https://b.example.com/1` have `"isolation": false` set.
 * The `https://a.example.com/` iframe tries to `postMessage()` a `SharedArrayBuffer` to the `https://b.example.com/1` iframe.
 
 What happens this time?
