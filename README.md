@@ -84,7 +84,7 @@ The following hints are proposed, all booleans:
 
 * `"prefer_isolated_event_loop"`: indicates that one reason the origin is opting in to isolation is in the hope that its event loop will be isolated from those of other origins. Origins might want this in order to get more consistent and predictable performance, isolated from whatever is happening in cross-origin iframes or popups.
 
-* `"prefer_isolated_memory"`: indicates that one reason the origin is opting in to isolation is in the hope of having an as-large-as-possible amount of memory available, such that large allocations from cross-origin pages should not cause the origin's allocations to start failing. Origins that plan on using lots of memory might want this.
+* `"prefer_isolated_memory"`: indicates that one reason the origin is opting in to isolation is in the hope of having an as-large-as-possible amount of memory available, such that large allocations from cross-origin pages should not cause the origin's allocations to start failing. Origins that plan on using lots of memory might want this. (This is intended to be a standards-track alternative to Mozilla's non-standardized [`Large-Allocation`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Large-Allocation) header.)
 
 * `"for_side_channel_protection"`: indicates that one reason the origin is opting in to isolation is in the hopes of preventing side-channel attacks such as [Spectre](https://en.wikipedia.org/wiki/Spectre_(security_vulnerability)). Origins might want this if they deal with sensitive data, which would be problematic if exfiltrated.
 
