@@ -38,7 +38,7 @@ The delivery mechanism for a web application to achieve origin isolation is [ori
 
 ```json
 {
-  "id": "my-policy",
+  "ids": ["my-policy"],
   "isolation": {
     "prefer_isolated_event_loop": true,
     "prefer_isolated_memory": true
