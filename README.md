@@ -20,6 +20,7 @@ This proposal allows web applications to give up these capabilities for their or
 - [How it works](#how-it-works)
   - [Background: agent clusters](#background-agent-clusters)
   - [Specification plan](#specification-plan)
+  - [More detail on workers](#more-detail-on-workers)
 - [Design choices and alternatives considered](#design-choices-and-alternatives-considered)
   - [Origin policy](#origin-policy)
   - [The browsing context group scope of isolation](#the-browsing-context-group-scope-of-isolation)
@@ -54,10 +55,12 @@ Origin-Policy: allowed=("my-policy" null)
 
 to their responses.
 
-The presence of the `"isolation"` field indicates that any realms (documents or workers) derived from that origin should be separated from other cross-origin realms—even if those realms are [same site](https://html.spec.whatwg.org/multipage/origin.html#same-site). In terms of observable, specified consequences for web developers, this means:
+The presence of the `"isolation"` field indicates that any documents derived from that origin should be separated from other cross-origin documents—even if those documents are [same site](https://html.spec.whatwg.org/multipage/origin.html#same-site). In terms of observable, specified consequences for web developers, this means:
 
-* Attempts to set `document.domain` will fail, so cross-origin realms will not be able to synchronously script each other, even if they are same site.
-* Attempts to share `SharedArrayBuffer`s to cross-origin realms via `postMessage()` will fail, even if those realms are same site.
+* Attempts to set `document.domain` will fail, so cross-origin documents will not be able to synchronously script each other, even if they are same site.
+* Attempts to share `SharedArrayBuffer`s to cross-origin documents via `postMessage()` will fail, even if those documents are same site.
+
+(Note that these are only observable consequences in document contexts; for workers, [origin isolation has no effect](#more-detail-on-workers).)
 
 The two hints provided, `"prefer_isolated_event_loop"` and `"prefer_isolated_memory"`, indicate that the primary reasons the origin is giving up these capabilities is in the hopes that the browser can provide better isolation of the origin's event loop and memory. See below for more details on [the possible hints](#proposed-hints).
 
@@ -124,7 +127,7 @@ Moving to origin isolation requires some observable changes, and thus the opt-in
 
 The specification for this feature in itself is fairly small. Most of the work is done by the foundational mechanisms of [origin policy](https://github.com/WICG/origin-policy) and the HTML Standard's [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map).
 
-In particular, when creating a document or worker, we use the following in place of the current algorithm for [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the `"isolation"` key in the origin policy manifest), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
+In particular, when creating a document, we use the following in place of the current algorithm for [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the `"isolation"` key in the origin policy manifest), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
 
 1. If _origin_ is an [opaque origin](https://html.spec.whatwg.org/#concept-origin-opaque), then return _origin_.
 1. If _origin_'s [host](https://html.spec.whatwg.org/#concept-origin-host)'s [registrable domain](https://url.spec.whatwg.org/#host-registrable-domain) is null, then return _origin_.
@@ -137,14 +140,28 @@ In particular, when creating a document or worker, we use the following in place
 
 This algorithm has two interesting features:
 
-* Even if origin isolation is not requested for a particular document/worker creation, if origin isolation has previously created an origin-keyed agent cluster, then we put the new document/worker in that origin-keyed agent cluster.
-* Even when origin isolation is requested, if there is a site-keyed agent cluster with same-origin realms, then we put the new document/worker in that site-keyed agent cluster, ignoring the isolation request.
+* Even if origin isolation is not requested for a particular document creation, if origin isolation has previously created an origin-keyed agent cluster, then we put the new document in that origin-keyed agent cluster.
+* Even when origin isolation is requested, if there is a site-keyed agent cluster with same-origin documents, then we put the new document in that site-keyed agent cluster, ignoring the isolation request.
 
 Both of these are consequences of a desire to ensure that same-origin sites do not end up isolated from each other.
 
 You can see a more full analysis of what results this algorithm produces in our [scenarios document](./scenarios.md).
 
 As far as the web-developer–observable consequences of using origins for agent cluster keys, this will automatically cause `SharedArrayBuffer`s to no longer be shareable cross-origin, because of the agent cluster check in [StructuredDeserialize](https://html.spec.whatwg.org/multipage/structured-data.html#structureddeserialize). We'd also need to add a check to the [`document.domain` setter](https://html.spec.whatwg.org/multipage/origin.html#dom-document-domain) to make it throw. (Ideally we'd find some way of restructuring the existing checks in `document.domain` so that they are also tied to agent cluster boundaries.)
+
+### More detail on workers
+
+We mentioned above that origin isolation has no effect on workers. Here we explain why exactly that is.
+
+First note that shared and service workers are already isolated into their own agent clusters. The only other things that exist in those agent clusters are potential nested dedicated workers, which are already restricted to being same-origin.
+
+What remains to consider is dedicated workers which are spawned directly by documents. Those end up in the agent cluster of their owner document, and the allocation of that agent cluster is impacted by origin isolation, which makes it origin-keyed instead of site-keyed.
+
+However, being origin-keyed has no observable impact for code inside a dedicated worker. All access to other realms is asynchronous inside a dedicated worker, so `document.domain` does not apply. And there's no way for dedicated worker code to send a `SharedArrayBuffer` to a same-site cross-origin destination directly, because the only thing it can communicate with is its parent document, or further nested dedicated workers, all of which are same-origin. Note that even `BroadcastChannel`, which bypasses the need to have a direct reference to the destination, is restricted to same-origin communications.
+
+A worker could send a `SharedArrayBuffer` to a same-site cross-origin destination by first passing it (or a `MessageChannel` through which the `SharedArrayBuffer` gets transmitted) to a same-origin document, and letting the document try to go beyond the origin boundary. This would no longer be possible with this proposal, but only because of the proposal's effect on the document, not because of any effect it had on the worker.
+
+(Note: this lack of impact is a bit hard to see with the current specification for how worker agents and agent clusters are allocated, which is declarative. [whatwg/html#5210](https://github.com/whatwg/html/issues/5210) tracks improving that specification; with such improvements, some of the above would become clearer.)
 
 ## Design choices and alternatives considered
 
