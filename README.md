@@ -27,6 +27,7 @@ This proposal allows web applications to give up these capabilities for their or
   - [Not using feature/document policy](#not-using-featuredocument-policy)
   - [Usage hints](#usage-hints)
   - [Opt-in, instead of implicit, origin isolation](#opt-in-instead-of-implicit-origin-isolation)
+  - [No-op `document.domain` setter instead of throwing](#no-op-documentdomain-setter-instead-of-throwing)
 - [Adjacent work](#adjacent-work)
   - [`COOP` + `COEP`](#coop--coep)
   - [Automatic origin isolation via `COOP` + `COEP`](#automatic-origin-isolation-via-coop--coep)
