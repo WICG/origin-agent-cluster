@@ -9,6 +9,8 @@ If a developer chooses to give up these capabilities, then the browser has more 
 
 This proposal allows web applications to give up these capabilities for their origin, and also hint at why they are doing so, to better guide the browser in its resource allocation decisions.
 
+_Note: this proposal does not fully "isolate" the origin in every sense of the word. It focuses on agent cluster allocation issue. See [below](#potential-future-work-on-further-isolation) for potential future work on further isolation._
+
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 ## Table of contents
@@ -31,6 +33,7 @@ This proposal allows web applications to give up these capabilities for their or
 - [Adjacent work](#adjacent-work)
   - [`COOP` + `COEP`](#coop--coep)
   - [Automatic origin isolation via `COOP` + `COEP`](#automatic-origin-isolation-via-coop--coep)
+- [Potential future work on further isolation](#potential-future-work-on-further-isolation)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -81,6 +84,7 @@ Non-goals:
 
 * Mandate process isolation or other implementation choices for user agents.
 * Give web developers visibility into process allocation.
+* "Fully" isolate an origin from all other origins, e.g. by preventing sharing of data via site-scoped storage or navigation. (See [below](#potential-future-work-on-further-isolation) for potential future work in that direction.)
 
 ## Proposed hints
 
@@ -237,3 +241,39 @@ However, we think that there remains room for this separate origin isolation pro
 * Turning on `COOP` + `COEP` does not provide a clear signal that the origin desires origin isolation, or why it would desire origin isolation. As discussed at length above, these signals can be useful for the browser in making decisions on implementation strategies. For example, consider a site with 30 iframes containing ads, which wishes to achieve side-channel protection. With an explicit dedicated isolation signal, the top-level site could explain its desire for side-channel protection, and recieve a dedicated process, while letting the ad frames get coalesced into a single process. Whereas if `COOP` + `COEP` by itself automatically created a process-isolation signal, then the browser could only use heuristics to guess whether to allocate 2 processes, or 31 processes, or something in between.
 
 * Deploying `COOP` + `COEP` could be a significant burden for sites, e.g. in terms of how it requires all of their embedded content to be updated with `CORP` headers. Some sites may not want to use any of the features enabled by `COOP` + `COEP` (e.g. `SharedArrayBuffer` or `process.measureMemory()`), and so be unmotivated to take on this burden. But they still might want origin isolation, e.g. of the event loop or heap isolation variety. In such cases, this origin-policy based approach would be much easier to deploy than `COOP` + `COEP`, since it does not require any embeddee cooperation.
+
+## Potential future work on further isolation
+
+As noted earlier in this document, this proposal is focused narrowly on the agent cluster allocation issue, and its implications for synchronous cross-origin access which has various security and performance effects.
+
+One might envision others was of isolating an origin that go beyond this. Many such concepts have been discussed in a previous ["Isolation Explainer"](https://wicg.github.io/isolation/explainer.html) from 2016. Some, like `window.opener` restriction or preventing cross-origin fetches, have since found solutions. (Respectively, [`Cross-Origin-Opener-Policy`](https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e) and [`Cross-Origin-Resource-Policy`](https://fetch.spec.whatwg.org/#cross-origin-resource-policy-header)/[`Sec-Fetch-Site`](https://www.w3.org/TR/fetch-metadata/#sec-fetch-site-header).) The ones that remain appear to be:
+
+* Preventing the origin from sharing storage (of [various types](https://storage.spec.whatwg.org/#infrastructure)) with different origins, even if those origins are same-site. This would include things like cookies or [Web Authentication](https://w3c.github.io/webauthn/) entries.
+* Double-keying cookies, so that when an isolated origin makes a request to `https://third-party.example/`, this uses a separate cookie jar from when any other origin makes a request to `https://third-party.example/`.
+* Preventing navigations from other origins to this origin (or perhaps allowing only specific entry points as navigation targets).
+
+We believe that, after tackling agent cluster allocation, these may be worthwhile further efforts to pursue. If so, building on top of origin policy, and perhaps the `"isolation"` member proposed here, seems very reasonable. One could imagine either
+
+```json
+{
+  "ids": ["my-policy"],
+  "isolation": {
+    "for_sidechannel_protection": true
+  },
+  "origin_isolated_storage": true
+}
+```
+
+or
+
+```json
+{
+  "ids": ["my-policy"],
+  "isolation": {
+    "for_sidechannel_protection": true,
+    "origin_isolated_storage": true
+  }
+}
+```
+
+as extensions of this proposal.
