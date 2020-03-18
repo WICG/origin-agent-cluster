@@ -78,6 +78,7 @@ Goals:
 * Allow user agents to use various implementation strategies to isolate origins when circumstances allow, and the developer has opted in to origin isolation, thus potentially achieving benefits for performance, security, and memory metrics.
 * Allow web applications to provide information to the browser about why they want isolation, in order to better guide the browser's implementation strategies.
 * Ensure consistent web-developer-observable behavior regardless of implementation choices (such as process allocation) or the sub-preferences expressed by an origin. (Modulo side channels.)
+* Avoid situations where two same-origin pages with different isolation preferences are treated as cross-origin by the browser. ([See below](#the-browsing-context-group-scope-of-isolation).)
 * Allow web applications to easily configure origin isolation for all URLs on their origin.
 
 Non-goals:
@@ -106,7 +107,7 @@ Currently, the state of the art in isolation is process-based. That is, current 
 
 The nuances of this proposal come into play under the following scenarios:
 
-* When allocating a process-per-origin is infeasible, e.g. because you are operating on a low-memory device or have already allocated a ton of processes. In such scenarios the browser can use the different hints to prioritize how it allocates processes, e.g. prioritizing protection from side-channel attacks above allowing memory measurement. 
+* When allocating a process-per-origin is infeasible, e.g. because you are operating on a low-memory device or have already allocated a ton of processes. In such scenarios the browser can use the different hints to prioritize how it allocates processes, e.g. prioritizing protection from side-channel attacks above allowing memory measurement.
 
 * When alternate isolation techniques are available, which give some but not all of the benefits as proccess isolation. For example, Blink is exploring a ["multiple Blink isolates/threads"](https://docs.google.com/document/d/12wEWJsZmxVnNwVGuxuEJF4922OWUr4fCs1xKHi9mTiI/edit#heading=h.g6fq85as9ptv) project, which would provide isolated event loops and heaps, but not full side-channel protection. A site which expressed a preference only for isolated event loops could thus be given a new thread, instead of a new process, saving resources.
 
@@ -183,7 +184,7 @@ We considered two other possible models:
 * Per-realm: in this model, we would not check for the existence of other site-keyed realms within the browsing context group, and would always origin-isolate realms which request isolation, and never isolate ones that do not.
 * Per-user agent: in this model, we would keep a global list of all origins which have ever requested isolation, and consult this first whenever creating a new realm.
 
-The downside of the per-document model is that it leads to strange scenarios like `https://b.example.com/1` and `https://b.example.com/2` being in different agent clusters: one of them site-keyed, and the other origin-keyed. This is not desirable, as same-origin pages should not be isolated from each other by the origin isolation feature.
+The downside of the per-realm model is that it leads to strange scenarios like `https://b.example.com/1` and `https://b.example.com/2` being in different agent clusters: one of them site-keyed, and the other origin-keyed. This is not desirable, as same-origin pages should not be isolated from each other by the origin isolation feature.
 
 The downside of the per-user agent model is that it makes it very hard for web application developers to roll back origin isolation. They essentially have to communicate to the user to restart their browser.
 
