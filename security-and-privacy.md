@@ -16,7 +16,7 @@ No.
 
 **Does this specification introduce new state for an origin that persists across browsing sessions?**
 
-Yes. This adds to [Origin Policy](https://github.com/WICG/origin-policy), which persists across browsing sessions using the HTTP cache.
+No.
 
 **Does this specification expose persistent, cross-origin state to the web?**
 
@@ -60,15 +60,15 @@ Yes. The [rules involved in choosing an agent cluster key](/README.md#specificat
 
 **How should this specification work in the context of a user agent’s "incognito" mode?**
 
-It should follow Origin Policy, which in turn follows the rules for the HTTP cache. (See [Origin Policy's security and privacy questionnaire](https://github.com/WICG/origin-policy/blob/master/security-and-privacy.md).)
+There should be no difference.
 
 **Does this specification persist data to a user’s local device?**
 
-Yes, via the HTTP cache (as part of Origin Policy).
+No.
 
 **Does this specification have a "Security Considerations" and "Privacy Considerations" section?**
 
-Not in itself. Since, as a specification, this will end up just being patches to HTML and Origin Policy, it will rely on those specifications sections.
+Not in itself. Since, as a specification, this will end up just being a patch to HTML, it will rely on that specification's sections.
 
 **Does this specification allow downgrading default security characteristics?**
 

@@ -8,7 +8,6 @@ Notes:
 * All of these considerations apply for popups, not just frames, in the same ways.
 * All of these considerations apply for workers, not just documents, in the same ways.
 * We use the notation `Origin{}` and `Site{}` to denote the type of agent cluster key.
-* We assume that "blocking" origin policies are used at all times, without async updates. (Async updates would just mean that we re-run these scenarios on a future load.)
 
 ## Two-document scenarios
 
@@ -36,28 +35,51 @@ Notes:
 
 The following is a more detailed scenario, involving more levels of nesting and dynamic insertion of new frames. It illustrates the same fundamental principles as the above examples, but it goes through them in more detail, which might be helpful.
 
-We start out as follows:
+Consider the following server setup:
 
-* `https://example.org/` embeds an iframe for `https://a.example.com/` which embeds an iframe for `https://b.example.com/1`
-* We open tab #1 to `https://example.org/`. Both `https://a.example.com/` and `https://b.example.com/1` responses point to origin policies with `"isolation": true` set.
+| URL                      | Has `Origin-Isolation` response header |
+| -------------------------|----------------------------------------|
+| `https://a.example.com`  | Yes                                    |
+| `https://b.example.com/1`| Yes                                    |
+| `https://b.example.com/2`| No                                     |
+| `https://c.example.com`  | No                                     |
+| `https://d.example.com`  | No                                     |
 
-Now, things get fun:
+Now consider the following series of nested iframes:
 
-* While we have tab #1 open, the server operator updates both `https://a.example.com/.well-known/origin-policy` and `https://b.example.com/.well-known/origin-policy` to set `"isolation": false`.
-* Then, in tab #1, `https://a.example.com/` inserts a new iframe, pointing to `https://b.example.com/2`. Since the `https://b.example.com/` policy on the server has been updated, the response used for creating this second child iframe is no longer requesting origin isolation.
-* This `https://b.example.com/2` iframe inserts an iframe for `https://c.example.com/`, which has no origin policy. Then `https://b.example.com/2` tries to `postMessage()` a `SharedArrayBuffer` to `https://c.example.com/`.
+```
+https://example.org
+└ https://a.example.com
+  └ https://b.example.com/1
+  └ https://b.example.com/2
+    └ https://c.example.com
+    └ https://d.example.com
+```
 
-What happens?
+Now, consider what happens if `https://b.example.com/2` tries to `postMessage()` a `SharedArrayBuffer` to `https://c.example.com`?
 
-The answer that the [proposed algorithm](./README.md#specification-plan) gives is that the `postMessage()` fails. Within the browsing context group (i.e. tab #1), we find the origin `https://b.example.com/` used as an agent cluster key, so even though the `https://b.example.com/2` iframe was loaded with an origin policy saying `"isolation": false`, it still gets origin-isolated.
+The answer that the [proposed algorithm](./README.md#specification-plan) gives is that the `postMessage()` fails. Within the browsing context group, we find the origin `https://b.example.com` used as an agent cluster key, so even though the `https://b.example.com/2` iframe was loaded without the `Origin-Isolation` header, it still gets origin-isolated. The allocation is:
 
-OK, let's go further.
+- `Origin{https://a.example.com}`: `https://a.example.com` page;
+- `Origin{https://b.example.com}`: `https://b.example.com/1` page, `https://b.example.com/2` page;
+- `Site{https://example.com}`: `https://c.example.com` page, `https://d.example.com` page.
 
-* Now we open up a new tab to `https://example.org/`, tab #2. Because of the server update, the origin policies corresponding to the nested iframes for `https://a.example.com/` and `https://b.example.com/1` have `"isolation": false` set.
-* The `https://a.example.com/` iframe tries to `postMessage()` a `SharedArrayBuffer` to the `https://b.example.com/1` iframe.
+OK, let's go further. While we have this tab open, the server operator makes some changes, removing `https://b.example.com/1`'s `Origin-Isolation` header:
 
-What happens this time?
+| URL                      | Has `Origin-Isolation` response header |
+| -------------------------|----------------------------------------|
+| `https://a.example.com`  | Yes                                    |
+| `https://b.example.com/1`| No                                     |
+| `https://b.example.com/2`| No                                     |
+| `https://c.example.com`  | No                                     |
 
-This time, we are in a new browsing context group, with a new agent cluster map. So this time, the iframes are not origin-isolated (i.e. everything is using site agent cluster keys), and the sharing succeeds.
+If the user then opens a new tab to `https://example.org`, will the `postMessage()` succeed in the new tab?
+
+Yes. This time, we are in a new browsing context group, with a new agent cluster map. So this time, the iframes are not origin-isolated (i.e. everything is using site agent cluster keys), and the sharing succeeds.
+
+That is, within this separate browsing context group, the allocation is:
+
+- `Origin{https://a.example.com}`: `https://a.example.com` page;
+- `Site{https://example.com}`: `https://b.example.com/1` page, `https://b.example.com/2` page, `https://c.example.com` page, `https://d.example.com` page.
 
 This means that, if you want to "un-isolate" your origin, you can to do so via a new, disconnected browsing context group, separate from the isolated one.
