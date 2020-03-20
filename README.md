@@ -23,6 +23,7 @@ _Note: a [previous version](https://github.com/WICG/origin-isolation/tree/6c35a7
 - [Implementation strategies](#implementation-strategies)
 - [How it works](#how-it-works)
   - [Background: agent clusters](#background-agent-clusters)
+  - [A note on parallelism, agents, and event loops](#a-note-on-parallelism-agents-and-event-loops)
   - [Specification plan](#specification-plan)
   - [More detail on workers](#more-detail-on-workers)
 - [Design choices and alternatives considered](#design-choices-and-alternatives-considered)
@@ -48,28 +49,34 @@ The delivery mechanism for a web application to achieve origin isolation is a ne
 HTTP/1.1 200 OK
 Content-Type: text/html
 ...
-Origin-Isolation: isolated-event-loop, isolated-memory
+Origin-Isolation: ?1
 ...
 ```
 
-The presence of the header indicates that any documents derived from that origin should be separated from other cross-origin documents—even if those documents are [same site](https://html.spec.whatwg.org/multipage/origin.html#same-site). In terms of observable, specified consequences for web developers, this means:
+The presence of the header, with the [structured headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) boolean "true" value `?1`, indicates that any documents derived from that origin should be separated from other cross-origin documents—even if those documents are [same site](https://html.spec.whatwg.org/multipage/origin.html#same-site). In terms of observable, specified consequences for web developers, this means:
 
 * Attempts to set `document.domain` will do nothing, so cross-origin documents will not be able to synchronously script each other, even if they are same site.
 * Attempts to share `SharedArrayBuffer`s to cross-origin documents via `postMessage()` will fail, even if those documents are same site.
 
 (Note that these are only observable consequences in document contexts; for workers, [origin isolation has no effect](#more-detail-on-workers).)
 
-The value of the header consists of a series of tokens indicating to the browser that the reason why the origin is giving up these capabilities is in the hopes that the browser can provide better isolation of the origin's event loop and memory. See below for [the full list of possible hints](#proposed-hints).
-
-The browser can then use these hints to choose a behind-the-scenes implementation strategy such as isolating the origin into its own process, or its own thread, or memory heap, or any other such implementation construct. These are just hints; ultimately the browser remains in charge of such implementation decisions.
-
-The developer can also supply the header with no specific hints, just the [structured headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) boolean "true":
+Alternately, instead of using `?1`, the developer can provide one or more hints, indicating what it is hoping to gain in exchange for giving up these capabilities. For example:
 
 ```
-Origin-Isolation: ?1
+Origin-Isolation: side-channel-protection
 ```
 
-This indicates that the page wants isolation solely for increased encapsulation, i.e. for the direct effects of preventing `document.domain` usage and `SharedArrayBuffer` memory sharing.
+```
+Origin-Isolation: parallelism
+```
+
+```
+Origin-Isolation: side-channel-protection, memory-measurement
+```
+
+See below for [the full list of possible hints](#proposed-hints).
+
+The browser can then use these hints (or their absence) to choose a behind-the-scenes implementation strategy. This could be isolating the origin into its own process, or its own thread, or its own memory heap, or any other such implementation construct. We emphasize that these are just hints; ultimately the browser remains in charge of such implementation decisions.
 
 _[#18](https://github.com/WICG/origin-isolation/issues/18) is an issue for discussing the header value syntax._
 
@@ -97,15 +104,15 @@ Non-goals for now:
 
 The following tokens are proposed as hints:
 
-* `isolated-event-loop`: indicates that one reason the origin is opting in to isolation is in the hope that its event loop will be isolated from those of other origins. Origins might want this in order to get more consistent and predictable performance, isolated from whatever is happening in cross-origin iframes or popups.
+* `parallelism`: indicates that one reason the origin is opting in to isolation is in the hope that code running in that origin will be run in parallel with that from those of other origins. Origins might want this in order to get more consistent and predictable performance, isolated from whatever is happening in cross-origin iframes or popups. ([See below for more](a-note-on-parallelism-agents-and-event-loops).)
 
 * `isolated-memory`: indicates that one reason the origin is opting in to isolation is in the hope of having an as-large-as-possible amount of memory available, such that large allocations from cross-origin pages should not cause the origin's allocations to start failing. Origins that plan on using lots of memory might want this. (This is intended to be a standards-track alternative to Mozilla's non-standardized [`Large-Allocation`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Large-Allocation) header.)
 
 * `side-channel-protection`: indicates that one reason the origin is opting in to isolation is in the hopes of preventing side-channel attacks such as [Spectre](https://en.wikipedia.org/wiki/Spectre_(security_vulnerability)). Origins might want this if they deal with sensitive data, which would be problematic if exfiltrated.
 
-* `memory-measurement`: indicates that one reason the origin is opting in to isolation is in the hopes of enabling accurate memory measurement via the [proposed `performance.measureMemory()` API extensions](https://github.com/ulan/javascript-agent-memory/blob/master/explainer.md#future-api-extensions). This API is proposed to reject if the browser cannot restrict its measurements to only same-origin resources (or cross-origin ones which have opted in via `Cross-Origin-Resource-Policy`). Thus, by indicating that the origin plans to use this API, the browser can take steps to ensure the measurements are restricted.
+* `memory-measurement`: indicates that one reason the origin is opting in to isolation is in the hopes of enabling accurate memory measurement via the [proposed `performance.measureMemory()` API extensions](https://github.com/ulan/javascript-agent-memory/blob/master/explainer.md#future-api-extensions). This API is proposed to omit any resources if the browser cannot guarantee that they are same-origin (or cross-origin, but opted in via `Cross-Origin-Resource-Policy`). Thus, by indicating that the origin plans to use this API, the browser can take steps to make it easier to bucket resources by origin, and thus this hint makes it more likely that `performance.measureMemory()` will give useful results.
 
-If none of these hints are present, i.e. the header just contains the boolean `?1` indicator, then it is assumed that the origin wants isolation solely for increased encapsulation, i.e. for the direct effects of preventing `document.domain` usage and `SharedArrayBuffer` memory sharing.
+If none of these hints are present, i.e. the header just contains the boolean `?1` indicator, then it is assumed that the origin wants isolation solely for increased encapsulation. That is, the developer wants the direct effects of preventing `document.domain` usage and `SharedArrayBuffer` memory sharing.
 
 ## Implementation strategies
 
@@ -134,6 +141,20 @@ Moving from the spec to the implementation level, the agent cluster boundary gen
 This means that the current state of the art in terms of segregating web content into different processes is [_site isolation_](https://www.chromium.org/Home/chromium-security/site-isolation), which segregates documents into separate processes according to the agent cluster rules. This can be done with no observable effects for JavaScript code.
 
 Moving to origin isolation requires some observable changes, and thus the opt-in we propose here.
+
+### A note on parallelism, agents, and event loops
+
+This proposal includes an explicit hint for increase parallelism. How does this interact with specification mechanisms?
+
+It turns out that specifications are structured to allow non-parallelized implementations, even across totally separate agents. The JavaScript specification [says](https://tc39.es/ecma262/#sec-agents)
+
+> an executing thread may be used as the executing thread by multiple agents
+
+and gives the example of a web browser sharing a single thread across multiple unrelated tabs in a browser window.
+
+Similarly, currently an [event loop](https://html.spec.whatwg.org/multipage/webappapis.html#event-loop) is defined to be shareable among multiple agents. Even if we [made event loops and agents 1:1](https://github.com/whatwg/html/issues/5352), such a specification-side change doesn't necessarily translate into a separate thread per agent/event loop; multiple separate event loops could be implemented with cooperative scheduling.
+
+In general, the only thing in the specification ecosystem that forces parallelism is workers, via their dedicated executing thread and the requirements around [forward progress](https://tc39.es/ecma262/#sec-forward-progress) and the atomics APIs. So, if a site developer wants to ask for parallelism in a window context, we need a new dedicated hint; we cannot reuse any existing specification mechanisms.
 
 ### Specification plan
 
@@ -241,7 +262,7 @@ However, we think that there remains room for this separate origin isolation pro
 
 * Turning on `COOP` + `COEP` does not provide a clear signal that the origin desires origin isolation, or why it would desire origin isolation. As discussed at length above, these signals can be useful for the browser in making decisions on implementation strategies. For example, consider a site with 30 iframes containing ads, which wishes to achieve side-channel protection. With an explicit dedicated isolation signal, the top-level site could explain its desire for side-channel protection, and recieve a dedicated process, while letting the ad frames get coalesced into a single process. Whereas if `COOP` + `COEP` by itself automatically created a process-isolation signal, then the browser could only use heuristics to guess whether to allocate 2 processes, or 31 processes, or something in between.
 
-* Deploying `COOP` + `COEP` can be a significant burden for sites, e.g. in terms of how it requires all of their embedded content to be updated with `CORP` headers. Some sites may not want to use any of the features enabled by `COOP` + `COEP` (e.g. `SharedArrayBuffer` or `process.measureMemory()`), and so be unmotivated to take on this burden. But they still might want origin isolation, e.g. of the event loop or heap isolation variety. In such cases, this separate header would be much easier to deploy than `COOP` + `COEP`, since it does not require any embeddee cooperation.
+* Deploying `COOP` + `COEP` can be a significant burden for sites, e.g. in terms of how it requires all of their embedded content to be updated with `CORP` headers. Some sites may not want to use any of the features enabled by `COOP` + `COEP` (e.g. `SharedArrayBuffer` or `process.measureMemory()`), and so be unmotivated to take on this burden. But they still might want origin isolation, perhaps of the parallelism or heap isolation variety. In such cases, this separate header would be much easier to deploy than `COOP` + `COEP`, since it does not require any embeddee cooperation.
 
 So to conclude, the separate `Origin-Isolation` header can be used both by sites who are not yet using `COOP` + `COEP`, to get origin isolation without taking on the burden of cross-origin isolation, and it can be used by sites that are using `COOP` + `COEP`, to provide the browser with specific hints that guide its implementation choices for converting origin isolation into process isolation.
 
@@ -249,7 +270,7 @@ So to conclude, the separate `Origin-Isolation` header can be used both by sites
 
 ### Origin policy
 
-A [previous version](https://github.com/WICG/origin-isolation/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal relied on origin isolation. At this time, however, there remain a number of [open design questions](https://github.com/WICG/origin-policy/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+design+question%22) about origin policy, some with no clear path toward a solution. So the plan is to decouple origin isolation from origin policy for now, instead using the `Origin-Isolation` header design seen throughout the rest of this document.
+A [previous version](https://github.com/WICG/origin-isolation/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal relied on [origin policy](https://wicg.github.io/origin-policy/). At this time, however, there remain a number of [open design questions](https://github.com/WICG/origin-policy/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+design+question%22) about origin policy, some with no clear path toward a solution. So the plan is to decouple origin isolation from origin policy for now, instead using the `Origin-Isolation` header design seen throughout the rest of this document.
 
 That said, we believe that origin policy would still be an optimal deployment vehicle for many things currently delivered as headers. This includes not only `Origin-Isolation`, but also `Content-Security-Policy`, `Feature-Policy`, `Document-Policy`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, and more. The same [arguments](https://github.com/WICG/origin-policy#the-problems-and-goals) as to why these would be best configured on an origin-wide basis apply to all of these headers. So for now, the plan is to develop origin isolation in the same way as the others, but also to add it to the list of candidates for integration into origin policy, once origin policy becomes ready.
 
