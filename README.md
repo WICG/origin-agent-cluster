@@ -278,7 +278,7 @@ One might envision others was of isolating an origin that go beyond this. Many s
 We believe that, after tackling agent cluster allocation, these may be worthwhile further efforts to pursue. If so, building on top of the `Origin-Isolation` header seems very reasonable. One could imagine something like
 
 ```
-Origin-Isolation: sidechannel-protection, isolated-storage
+Origin-Isolation: side-channel-protection, isolated-storage
 ```
 
 as an extension of this proposal.
