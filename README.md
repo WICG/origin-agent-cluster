@@ -3,7 +3,7 @@
 **Origin isolation** refers to segregating cross-origin documents into separate [agent clusters](https://html.spec.whatwg.org/multipage/webappapis.html#integration-with-the-javascript-agent-cluster-formalism). Translated into developer-observable effects, this means:
 
 * preventing the [`document.domain`](https://html.spec.whatwg.org/multipage/origin.html#relaxing-the-same-origin-restriction) setter from relaxing the same-origin policy; and
-* preventing `SharedArrayBuffer`s from being shared with cross-origin (but same-site) documents.
+* preventing `WebAssembly.Module`s from being shared with cross-origin (but same-site) documents.
 
 If a developer chooses to give up these capabilities, then the browser has more flexibility in how it allocates resources like processes, threads, and event loops.
 
@@ -23,8 +23,9 @@ _Note: a [previous version](https://github.com/WICG/origin-isolation/tree/6c35a7
 - [Implementation strategies](#implementation-strategies)
 - [How it works](#how-it-works)
   - [Background: agent clusters](#background-agent-clusters)
-  - [A note on parallelism, agents, and event loops](#a-note-on-parallelism-agents-and-event-loops)
   - [Specification plan](#specification-plan)
+  - [Parallelism, agents, and event loops](#parallelism-agents-and-event-loops)
+  - [`SharedArrayBuffer`, `WebAssembly.Memory`, and `WebAssembly.Module`](#sharedarraybuffer-webassemblymemory-and-webassemblymodule)
   - [More detail on workers](#more-detail-on-workers)
 - [Design choices and alternatives considered](#design-choices-and-alternatives-considered)
   - [Using a per-document header](#using-a-per-document-header)
@@ -56,7 +57,7 @@ Origin-Isolation: ?1
 The presence of the header, with the [structured headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) boolean "true" value `?1`, indicates that any documents derived from that origin should be separated from other cross-origin documents—even if those documents are [same site](https://html.spec.whatwg.org/multipage/origin.html#same-site). In terms of observable, specified consequences for web developers, this means:
 
 * Attempts to set `document.domain` will do nothing, so cross-origin documents will not be able to synchronously script each other, even if they are same site.
-* Attempts to share `SharedArrayBuffer`s to cross-origin documents via `postMessage()` will fail, even if those documents are same site.
+* Attempts to share `WebAssembly.Module`s to cross-origin documents via `postMessage()` will fail, even if those documents are same site.
 
 (Note that these are only observable consequences in document contexts; for workers, [origin isolation has no effect](#more-detail-on-workers).)
 
@@ -84,10 +85,10 @@ _[#18](https://github.com/WICG/origin-isolation/issues/18) is an issue for discu
 
 Goals:
 
-* Allow web applications to isolate themselves from cross-origin memory sharing and synchronous scripting (in a guaranteed way).
+* Allow web applications to isolate themselves from cross-origin synchronous scripting (in a guaranteed way).
 * Allow user agents to use various implementation strategies to isolate origins when circumstances allow, and the developer has opted in to origin isolation, thus potentially achieving benefits for performance, security, and memory metrics.
 * Allow web applications to provide information to the browser about why they want isolation, in order to better guide the browser's implementation strategies.
-* Ensure consistent web-developer-observable behavior regardless of implementation choices (such as process allocation) or the sub-preferences expressed by an origin. (Modulo side channels.)
+* Ensure consistent web-developer-observable behavior regardless of implementation choices (such as process allocation) or the hints expressed by an origin. (Modulo side channels.)
 * Avoid situations where two same-origin pages with different isolation preferences are treated as cross-origin by the browser. ([See below](#the-browsing-context-group-scope-of-isolation).)
 
 Non-goals:
@@ -112,7 +113,7 @@ The following tokens are proposed as hints:
 
 * `memory-measurement`: indicates that one reason the origin is opting in to isolation is in the hopes of enabling accurate memory measurement via the [proposed `performance.measureMemory()` API extensions](https://github.com/ulan/javascript-agent-memory/blob/master/explainer.md#future-api-extensions). This API is proposed to omit any resources if the browser cannot guarantee that they are same-origin (or cross-origin, but opted in via `Cross-Origin-Resource-Policy`). Thus, by indicating that the origin plans to use this API, the browser can take steps to make it easier to bucket resources by origin, and thus this hint makes it more likely that `performance.measureMemory()` will give useful results.
 
-If none of these hints are present, i.e. the header just contains the boolean `?1` indicator, then it is assumed that the origin wants isolation solely for increased encapsulation. That is, the developer wants the direct effects of preventing `document.domain` usage and `SharedArrayBuffer` memory sharing.
+If none of these hints are present, i.e. the header just contains the boolean `?1` indicator, then it is assumed that the origin wants isolation solely for increased encapsulation. That is, the developer wants the direct effects of preventing `document.domain` usage and `WebAssembly.Module` sharing.
 
 ## Implementation strategies
 
@@ -122,50 +123,35 @@ The nuances of this proposal come into play under the following scenarios:
 
 * When allocating a process-per-origin is infeasible, e.g. because you are operating on a low-memory device or have already allocated a ton of processes. In such scenarios the browser can use the different hints to prioritize how it allocates processes, e.g. prioritizing protection from side-channel attacks above allowing memory measurement.
 
-* When alternate isolation techniques are available, which give some but not all of the benefits as proccess isolation. For example, Blink is exploring a ["multiple Blink isolates/threads"](https://docs.google.com/document/d/12wEWJsZmxVnNwVGuxuEJF4922OWUr4fCs1xKHi9mTiI/edit#heading=h.g6fq85as9ptv) project, which would provide isolated event loops and heaps, but not full side-channel protection. A site which expressed a preference only for isolated event loops could thus be given a new thread, instead of a new process, saving resources.
+* When alternate isolation techniques are available, which give some but not all of the benefits as proccess isolation. For example, Blink is exploring a ["multiple Blink isolates/threads"](https://docs.google.com/document/d/12wEWJsZmxVnNwVGuxuEJF4922OWUr4fCs1xKHi9mTiI/edit#heading=h.g6fq85as9ptv) project, which would provide parallelism and isolated and heaps, but not full side-channel protection. A site which expressed a preference only for parallelism could thus be given a new thread, instead of a new process, saving resources.
 
 ## How it works
 
 ### Background: agent clusters
 
-An important concept in the browser processing model is the [agent cluster](https://html.spec.whatwg.org/multipage/webappapis.html#integration-with-the-javascript-agent-cluster-formalism). Agent clusters are how the specification expresses which realms (windows/workers/etc.) are guaranteed to be able to share memory with each other using `SharedArrayBuffer`. They also constrain which pages can potentially synchronously script each other, e.g. via `someIframe.contentWindow.someFunction()`.
+An important concept in the browser processing model is the [agent cluster](https://html.spec.whatwg.org/multipage/webappapis.html#integration-with-the-javascript-agent-cluster-formalism). Agent clusters are how the specification expresses which realms (windows/workers/etc.) are able to share `SharedArrayBuffer`, `WebAssembly.Memory`, and `WebAssembly.Module` instances. They also constrain which pages can potentially synchronously script each other, e.g. via `someIframe.contentWindow.someFunction()`.
 
-The HTML Standard currently [keys](https://html.spec.whatwg.org/multipage/webappapis.html#agent-cluster-key) agent clusters on scheme-and-registrable-domain ("site"), which roughly means that any documents within the same [browsing context group](https://html.spec.whatwg.org/multipage/browsers.html#browsing-context-group) that are same-site can share memory with each other or synchronously script each other. Examples:
+The HTML Standard currently [keys](https://html.spec.whatwg.org/multipage/webappapis.html#agent-cluster-key) agent clusters on scheme-and-registrable-domain ("site"), which roughly means that any documents within the same [browsing context group](https://html.spec.whatwg.org/multipage/browsers.html#browsing-context-group) that are same-site can potentially synchronously script each other. Examples:
 
-* `https://sub1.example.org/` can share memory with a `https://sub2.example.org/` iframe. It cannot share with a `http://sub1.example.org/` iframe (mismatched scheme).
-* `https://example.com/` can share memory with a `https://example.com/` popup that it opens. It cannot share with a completely separate `https://example.com/` tab, nor with a popup opened with `noopener` (mismatched browsing context group).
-* `https://whatwg.github.io/` cannot share memory with a `https://jsdom.github.io/`, because `github.io` is on the Public Suffix List.
+* `https://sub1.example.org/` could script an `https://sub2.example.org/` iframe. It could not script  a `http://sub1.example.org/` iframe (mismatched scheme).
+* `https://example.com/` could script an `https://example.com/` popup that it opens. It could not script  a completely separate `https://example.com/` tab, nor a popup opened with `noopener` (mismatched browsing context group).
+* `https://whatwg.github.io/` could not script `https://jsdom.github.io/`, because `github.io` is on the Public Suffix List.
 
-Moving from the spec to the implementation level, the agent cluster boundary generally constrains how an implementation performs _process_ separation. That is, since the specification mandates certain documents be able to share memory with each other, implementations are constrained to put them in the same process, if they want to follow the specifications.
+Moving from the spec to the implementation level, the agent cluster boundary generally constrains how an implementation performs _process_ separation. That is, since the specification mandates certain documents be able to access each other synchronously, implementations are constrained to put them in the same process. (Cross-origin same-site pages need to both set `document.domain` in order to allow such synchronous scripting, but the very fact that they could do so at any time constrains implementation choices.)
 
 This means that the current state of the art in terms of segregating web content into different processes is [_site isolation_](https://www.chromium.org/Home/chromium-security/site-isolation), which segregates documents into separate processes according to the agent cluster rules. This can be done with no observable effects for JavaScript code.
 
 Moving to origin isolation requires some observable changes, and thus the opt-in we propose here.
 
-### A note on parallelism, agents, and event loops
-
-This proposal includes an explicit hint for increase parallelism. How does this interact with specification mechanisms?
-
-It turns out that specifications are structured to allow non-parallelized implementations, even across totally separate agents. The JavaScript specification [says](https://tc39.es/ecma262/#sec-agents)
-
-> an executing thread may be used as the executing thread by multiple agents
-
-and gives the example of a web browser sharing a single thread across multiple unrelated tabs in a browser window.
-
-Similarly, currently an [event loop](https://html.spec.whatwg.org/multipage/webappapis.html#event-loop) is defined to be shareable among multiple agents. Even if we [made event loops and agents 1:1](https://github.com/whatwg/html/issues/5352), such a specification-side change doesn't necessarily translate into a separate thread per agent/event loop; multiple separate event loops could be implemented with cooperative scheduling.
-
-In general, the only thing in the specification ecosystem that forces parallelism is workers, via their dedicated executing thread and the requirements around [forward progress](https://tc39.es/ecma262/#sec-forward-progress) and the atomics APIs. So, if a site developer wants to ask for parallelism in a window context, we need a new dedicated hint; we cannot reuse any existing specification mechanisms.
-
 ### Specification plan
 
-The specification for this feature in itself is fairly small. Most of the work is done by the foundational mechanisms of [origin policy](https://github.com/WICG/origin-policy) and the HTML Standard's [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map).
+The specification for this feature in itself consists of two parts. One part is header parsing, which relies on the [Structured Headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) specification to do most of the work. The other is agent cluster keying, which is done by modifying the HTML Standard's [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map).
 
 In particular, when creating a document, we use the following in place of the current algorithm for [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the presence of a valid `Origin-Isolation` header), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
 
-1. If _origin_ is an [opaque origin](https://html.spec.whatwg.org/#concept-origin-opaque), then return _origin_.
-1. If _origin_'s [host](https://html.spec.whatwg.org/#concept-origin-host)'s [registrable domain](https://url.spec.whatwg.org/#host-registrable-domain) is null, then return _origin_.
+1. Let _key_ be the result of [obtaining a site](https://html.spec.whatwg.org/multipage/webappapis.html#obtain-a-site) from _origin_.
+1. If _key_ is an [origin](https://html.spec.whatwg.org/multipage/origin.html#concept-origin), then return _origin_.
 1. If _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_origin_] exists, then return _origin_.
-1. Let _site_ be (_origin_'s [scheme](https://html.spec.whatwg.org/#concept-origin-scheme), _origin_'s [host](https://html.spec.whatwg.org/#concept-origin-host)'s [registrable domain](https://url.spec.whatwg.org/#host-registrable-domain)).
 1. If _requestsIsolation_ is true:
     1. If _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] exists, and _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] contains any agents which contain any realms whose [settings object](https://html.spec.whatwg.org/#concept-realm-settings-object)'s [origin](https://html.spec.whatwg.org/#concept-settings-object-origin) are [same-origin](https://html.spec.whatwg.org/#same-origin) with _origin_, then return _site_.
     1. Return _origin_.
@@ -180,7 +166,31 @@ Both of these are consequences of a desire to ensure that same-origin sites do n
 
 You can see a more full analysis of what results this algorithm produces in our [scenarios document](./scenarios.md).
 
-As far as the web-developer–observable consequences of using origins for agent cluster keys, this will automatically cause `SharedArrayBuffer`s to no longer be shareable cross-origin, because of the agent cluster check in [StructuredDeserialize](https://html.spec.whatwg.org/multipage/structured-data.html#structureddeserialize). We'd also need to add a check to the [`document.domain` setter](https://html.spec.whatwg.org/multipage/origin.html#dom-document-domain) to make it no-op if the current agent's agent cluster is origin-keyed.
+As far as the web-developer–observable consequences of using origins for agent cluster keys, this will automatically cause `WebAssembly.Module` instances to no longer be shareable cross-origin, because of the agent cluster check in [StructuredDeserialize](https://html.spec.whatwg.org/multipage/structured-data.html#structureddeserialize). We'd also need to add a check to the [`document.domain` setter](https://html.spec.whatwg.org/multipage/origin.html#dom-document-domain) to make it no-op if the surrounding agent's agent cluster is origin-keyed.
+
+### Parallelism, agents, and event loops
+
+This proposal includes an explicit hint for increase parallelism. How does this interact with specification mechanisms?
+
+It turns out that specifications are structured to allow non-parallelized implementations, even across totally separate agents. The JavaScript specification [says](https://tc39.es/ecma262/#sec-agents)
+
+> an executing thread may be used as the executing thread by multiple agents
+
+and gives the example of a web browser sharing a single thread across multiple unrelated tabs in a browser window.
+
+Similarly, currently an [event loop](https://html.spec.whatwg.org/multipage/webappapis.html#event-loop) is defined to be shareable among multiple agents. Even if we [made event loops and agents 1:1](https://github.com/whatwg/html/issues/5352), such a specification-side change doesn't necessarily translate into a separate thread per agent/event loop; multiple separate event loops could be implemented with cooperative scheduling.
+
+In general, the only thing in the specification ecosystem that forces parallelism is workers, via their dedicated executing thread and the requirements around [forward progress](https://tc39.es/ecma262/#sec-forward-progress) and the atomics APIs. So, if a site developer wants to ask for parallelism in a window context, we need a new dedicated hint; we cannot reuse any existing specification mechanisms.
+
+### `SharedArrayBuffer`, `WebAssembly.Memory`, and `WebAssembly.Module`
+
+Does this proposal have any effect on sharing of `SharedArrayBuffer` or `WebAssembly.Memory`? The answer is no, but the reasoning is somewhat subtle.
+
+The [current specification consensus](https://github.com/whatwg/html/pull/4734) is that `SharedArrayBuffer` or `WebAssembly.Memory` will only be structured-serializable when the surrounding agent's agent cluster is _cross-origin isolated_, which means that `COOP` + `COEP` headers have been set. But cross-origin isolation automatically implies origin isolation; that is, cross origin isolation means that `SharedArrayBuffer` and `WebAssembly.Memory` will not be able to be sent cross-origin anyway. See [below](#coop--coep) for more discussion on those two headers, and on the relationship between cross-origin isolation and origin isolation.
+
+(Note that currently in Chromium on desktop platforms, this specification consensus is not yet followed, and `SharedArrayBuffer` and `WebAssembly.Memory` can be sent to cross-origin same-site destinations within the same agent cluster. The plan is for origin isolation to restrict this. But this is a temporary, desktop-Chromium-specific situation, and does not impact the specification proposal.)
+
+Finally, we turn our attention to `WebAssembly.Module`. Structured serialization of `WebAssembly.Module` is restricted to agent clusters, but not for security reasons: the restriction is in place because the point of structured serializing a `WebAssembly.Module` is to avoid recompilation of the module, which is only possible if its destination is within the same process. As such, sending `WebAssembly.Module` around is not guarded by `COOP` + `COEP`, and so origin isolation will observably change the boundaries within which it can be sent, by changing the scope of agent clusters to be origin-keyed instead of site-keyed. This is why, in addition to the synchronous scripting restrictions, we mention the changes to `WebAssembly.Module` serialization as an observable consequence of origin isolation.
 
 ### More detail on workers
 
@@ -190,11 +200,9 @@ First note that shared and service workers are already isolated into their own a
 
 What remains to consider is dedicated workers which are spawned directly by documents. Those end up in the agent cluster of their owner document.
 
-Does the owner document's `Origin-Isolation` header impact any code inside such a decicated worker? The answer is no. All access to other realms is asynchronous inside a dedicated worker, so `document.domain` does not apply. And there's no way for dedicated worker code to send a `SharedArrayBuffer` to a same-site cross-origin destination directly, because the only thing it can communicate with is its parent document, or further nested dedicated workers, all of which are same-origin. Note that even `BroadcastChannel`, which bypasses the need to have a direct reference to the destination, is restricted to same-origin communications.
+Does the owner document's `Origin-Isolation` header impact any code inside such a decicated worker? The answer is no. All access to other realms is asynchronous inside a dedicated worker, so `document.domain` does not apply. And there's no way for dedicated worker code to send a `WebAssembly.Module` to a same-site cross-origin destination directly, because the only thing it can communicate with is its parent document, or further nested dedicated workers, all of which are same-origin. Note that even `BroadcastChannel`, which bypasses the need to have a direct reference to the destination, is restricted to same-origin communications.
 
-A worker could send a `SharedArrayBuffer` to a same-site cross-origin destination by first passing it (or a `MessageChannel` through which the `SharedArrayBuffer` gets transmitted) to a same-origin document, and letting the document try to go beyond the origin boundary. This would no longer be possible with this proposal, but only because of the proposal's effect on the document, not because of any effect it had on the worker.
-
-(Note: this lack of impact is a bit hard to see with the current specification for how worker agents and agent clusters are allocated, which is declarative. [whatwg/html#5210](https://github.com/whatwg/html/issues/5210) tracks improving that specification; with such improvements, some of the above would become clearer.)
+A worker could send a `WebAssembly.Module` to a same-site cross-origin destination by first passing it (or a `MessageChannel` through which the `WebAssembly.Module` gets transmitted) to a same-origin document, and letting the document try to go beyond the origin boundary. This would no longer be possible with this proposal, but only because of the proposal's effect on the document, not because of any effect it had on the worker.
 
 ## Design choices and alternatives considered
 
@@ -202,7 +210,7 @@ A worker could send a `SharedArrayBuffer` to a same-site cross-origin destinatio
 
 This proposal follows in the tradition of other security primitives like CSP, COEP, and COOP, by using a header to change the behavior of the document.
 
-A previous iteration of this proposal used [origin policy](https://wicg.github.io/origin-policy/), in an attempt to ensure that all documents on the origin are aligned behind the decision to be isolated. We believe this is still a desirable direction, both for the `Origin-Isolation` header and for other security headers. But it's worth noting that the advantages are mainly in easing server configuration. Because different page loads on an origin could recieve different origin policies anyway (due to, e.g., server-side updates), there is no technical simplification gained by using origin policy. That is, the browser and site developer need to deal with the potential for varying origin isolation hints across the site in both delivery mechanisms.
+A previous iteration of this proposal used [origin policy](https://wicg.github.io/origin-policy/), in an attempt to ensure that all documents on the origin are aligned behind the decision to be isolated. We believe this is still a desirable direction, both for the `Origin-Isolation` header and for other security headers. But it's worth noting that the advantages are mainly in easing server configuration. Because different page loads on an origin could recieve different origin policies anyway (due to, e.g., server-side updates), there is no technical simplification gained by using origin policy. That is, the browser and site developer need to deal with the potential for varying origin isolation preferences across the site in both delivery mechanisms.
 
 See [below](#origin-policy) for how this proposal might be upgraded to use origin policy in the future.
 
@@ -237,7 +245,7 @@ On the other end of the spectrum, directly indicating implementation choices to 
 
 Another potential road we explored was to try to find scenarios where a process-per-origin could be done transparently, without an explicit opt-in. This would be possible if:
 
-* We [restricted `SharedArrayBuffer` to same-origin usage](https://github.com/whatwg/html/issues/4920) at all times. (It's currently unknown if doing this would be web-compatible.)
+* We [restricted `WebAssembly.Module` to same-origin usage](https://github.com/WebAssembly/spec/issues/1081) at all times. (It's currently unknown if doing this would be web-compatible.)
 * Pages used the [`"document-domain"` feature policy](https://html.spec.whatwg.org/multipage/infrastructure.html#document-domain-feature) to turn off their own ability to use `document.domain`.
 
 Under these conditions, origin-based process isolation could be done by user agents unobservably, similar to how site-based process isolation is done today.
@@ -254,7 +262,7 @@ However, throwing would pose a potential migration burden for sites. Measurement
 
 ### `COOP` + `COEP`
 
-The [`Cross-Origin-Opener-Policy`](https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e) and [`Cross-Origin-Embedder-Policy`](https://mikewest.github.io/corpp/) headers, when combined, also give origin isolation. That is, documents which include both headers will automatically change their agent cluster key to use the origin, instead of the site. As discussed previously, this has observable effects on `document.domain` and `SharedArrayBuffer`. Note that, in contrast to the problems explained above with using feature/document policy, this model works, since `COEP` is required to match for all descendant browsing contexts anyway, and `COOP` is consulted via the top-level browsing context.
+The [`Cross-Origin-Opener-Policy`](https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e) and [`Cross-Origin-Embedder-Policy`](https://mikewest.github.io/corpp/) headers, when combined, also give origin isolation. That is, documents which include both headers will automatically change their agent cluster key to use the origin, instead of the site. As discussed previously, this has observable effects on `document.domain` and `WebAssembly.Module`. Note that, in contrast to the problems explained above with using feature/document policy, this model works, since `COEP` is required to match for all descendant browsing contexts anyway, and `COOP` is consulted via the top-level browsing context.
 
 We are optimistic about this approach for getting the observable effects of origin isolation. In particular, preventing the detrimental effects of `document.domain` is a long-time goal of the web standards and browser community, and tying that to headers like `COOP` + `COEP` and the various carrots they unlock seems like a great strategy.
 
@@ -264,7 +272,7 @@ However, we think that there remains room for this separate origin isolation pro
 
 * Deploying `COOP` + `COEP` can be a significant burden for sites, e.g. in terms of how it requires all of their embedded content to be updated with `CORP` headers. Some sites may not want to use any of the features enabled by `COOP` + `COEP` (e.g. `SharedArrayBuffer` or `process.measureMemory()`), and so be unmotivated to take on this burden. But they still might want origin isolation, perhaps of the parallelism or heap isolation variety. In such cases, this separate header would be much easier to deploy than `COOP` + `COEP`, since it does not require any embeddee cooperation.
 
-So to conclude, the separate `Origin-Isolation` header can be used both by sites who are not yet using `COOP` + `COEP`, to get origin isolation without taking on the burden of cross-origin isolation, and it can be used by sites that are using `COOP` + `COEP`, to provide the browser with specific hints that guide its implementation choices for converting origin isolation into process isolation.
+So to conclude, the separate `Origin-Isolation` header can be used both by sites who are not yet using `COOP` + `COEP`, to get origin isolation without taking on the burden of cross-origin isolation, and it can be used by sites that are using `COOP` + `COEP`, to provide the browser with specific hints that guide its implementation choices for converting origin isolation into process isolation or other implementation technologies.
 
 ## Potential future work
 
@@ -280,7 +288,7 @@ For reference, a sample origin policy manifest expressing similar values to the 
 {
   "ids": ["my-policy"],
   "isolation": {
-    "isolated_event_loop": true,
+    "parallelism": true,
     "isolated_memory": true
   }
 }

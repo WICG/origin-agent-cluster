@@ -56,7 +56,7 @@ https://example.org
     └ https://d.example.com
 ```
 
-Now, consider what happens if `https://b.example.com/2` tries to `postMessage()` a `SharedArrayBuffer` to `https://c.example.com`?
+Now, consider what happens if `https://b.example.com/2` tries to `postMessage()` a `WebAssembly.Module` to `https://c.example.com`?
 
 The answer that the [proposed algorithm](./README.md#specification-plan) gives is that the `postMessage()` fails. Within the browsing context group, we find the origin `https://b.example.com` used as an agent cluster key, so even though the `https://b.example.com/2` iframe was loaded without the `Origin-Isolation` header, it still gets origin-isolated. The allocation is:
 
