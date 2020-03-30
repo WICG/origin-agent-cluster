@@ -9,7 +9,7 @@ If a developer chooses to give up these capabilities, then the browser has more 
 
 This proposal allows web applications to give up these capabilities for their origin, and also hint at why they are doing so, to better guide the browser in its resource allocation decisions.
 
-_Note: this proposal does not fully "isolate" the origin in every sense of the word. It focuses on agent cluster allocation issue. See [below](#potential-future-work-on-further-isolation) for potential future work on further isolation._
+_Note: this proposal does not fully "isolate" the origin in every sense of the word. It focuses on agent cluster allocation issue. See [below](#further-isolation) for potential future work on further isolation._
 
 _Note: a [previous version](https://github.com/WICG/origin-isolation/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal was based on [origin policy](https://wicg.github.io/origin-policy/), but we have now decoupled them. See [below](#origin-policy) for more on this subject._
 
@@ -98,7 +98,7 @@ Non-goals:
 
 Non-goals for now:
 
-* "Fully" isolate an origin from all other origins, e.g. by preventing sharing of data via site-scoped storage or navigation. See [below](#potential-future-work-on-further-isolation) for potential future work in that direction.
+* "Fully" isolate an origin from all other origins, e.g. by preventing sharing of data via site-scoped storage or navigation. See [below](#further-isolation) for potential future work in that direction.
 * Allow web applications to easily configure origin isolation for all URLs on their origin. See [below](#origin-policy) for potential future work in that direction.
 
 ## Proposed hints
