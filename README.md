@@ -84,7 +84,7 @@ Currently, the state of the art in isolation is process-based. That is, current 
 
 For example, in some cases allocating a process-per-isolated-origin is infeasible, e.g. because you are operating on a low-memory device, or have already allocated a ton of processes, or because the browser does not implement the ability for iframes to be placed in a separate process. In such scenarios the JavaScript-observable effects of isolation will still be present, giving applications an increase in encapsulation. But there wouldn't be any performance or security benefits.
 
-Alternate isolation techniques are possible,  which give some but not all of the benefits as proccess isolation. For example, Blink is exploring a ["multiple Blink isolates/threads"](https://docs.google.com/document/d/12wEWJsZmxVnNwVGuxuEJF4922OWUr4fCs1xKHi9mTiI/edit#heading=h.g6fq85as9ptv) project, which would provide parallelism and isolated heaps, but not full side-channel protection. But, these remain speculative as of the time of this writing.
+Alternate isolation techniques are possible,  which give some but not all of the benefits as process isolation. For example, Blink is exploring a ["multiple Blink isolates/threads"](https://docs.google.com/document/d/12wEWJsZmxVnNwVGuxuEJF4922OWUr4fCs1xKHi9mTiI/edit#heading=h.g6fq85as9ptv) project, which would provide parallelism and isolated heaps, but not full side-channel protection. But, these remain speculative as of the time of this writing.
 
 A [future extension](#hints) might be able to help the browser better prioritize when to allocate processes, or choose between process isolation and other techniques.
 
