@@ -110,22 +110,16 @@ Moving to origin isolation requires some observable changes, and thus the opt-in
 
 The specification for this feature in itself consists of two parts. One part is header parsing, which relies on the [Structured Headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) specification to do most of the work. The other is agent cluster keying, which is done by modifying the HTML Standard's [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map).
 
-In particular, when creating a document, we use the following in place of the current algorithm for [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the presence of a valid `Origin-Isolation` header), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
+In particular, when creating a document, we modify the algorithm to [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the presence of a valid `Origin-Isolation` header), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
 
-1. Let _key_ be the result of [obtaining a site](https://html.spec.whatwg.org/multipage/webappapis.html#obtain-a-site) from _origin_.
-1. If _key_ is an [origin](https://html.spec.whatwg.org/multipage/origin.html#concept-origin), then return _origin_.
-1. If _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_origin_] exists, then return _origin_.
-1. If _requestsIsolation_ is true:
-    1. If _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] exists, and _group_'s [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map)\[_site_] contains any agents which contain any realms whose [settings object](https://html.spec.whatwg.org/#concept-realm-settings-object)'s [origin](https://html.spec.whatwg.org/#concept-settings-object-origin) are [same-origin](https://html.spec.whatwg.org/#same-origin) with _origin_, then return _site_.
-    1. Return _origin_.
-1. Return _site_.
+The new algorithm will check if _origin_ has previously been placed in a site- or origin-keyed agent cluster within _group_, and if so, it will always return that same key, to stay consistent. Otherwise, it uses the _requestsIsolation_ boolean to determine whether to return _origin_, or the derived site.
 
-This algorithm has two interesting features:
+The consistency part of this algorithm has two interesting features:
 
 * Even if origin isolation is not requested for a particular document creation, if origin isolation has previously created an origin-keyed agent cluster, then we put the new document in that origin-keyed agent cluster.
-* Even when origin isolation is requested, if there is a site-keyed agent cluster with same-origin documents, then we put the new document in that site-keyed agent cluster, ignoring the isolation request.
+* Even when origin isolation is requested, if there has previously been a site-keyed agent cluster with same-origin documents in the browsing context group, then we put the new document in that site-keyed agent cluster, ignoring the isolation request.
 
-Both of these are consequences of a desire to ensure that same-origin sites do not end up isolated from each other.
+Both of these are consequences of a desire to ensure that same-origin sites do not end up isolated from each other, even in scenarios involving navigating back and forward.
 
 You can see a more full analysis of what results this algorithm produces in our [scenarios document](./scenarios.md).
 

@@ -17,10 +17,10 @@ Notes:
 | `https://e.com` w/ OI   | `https://e.com` w/o OI   | Both in `Origin{https://e.com}`                                      |
 | `https://e.com` w/o OI  | `https://e.com` w/o OI   | Both in `Site{https://e.com}`                                        |
 | `https://e.com` w/o OI  | `https://e.com` w/ OI    | Both in `Site{https://e.com}`                                        |
+| `https://e.com` w/o OI  | `https://x.e.com` w/o OI | Both in `Site{https://e.com}`                                        |
 | `https://e.com` w/o OI  | `https://x.e.com` w/ OI  | Main in `Site{https://e.com}`   <br>Sub in `Origin{https://x.e.com}` |
-| `https://e.com` w/o OI  | `https://x.e.com` w/ OI  | Main in `Site{https://e.com}`   <br>Sub in `Origin{https://x.e.com}` |
-| `https://e.com` w/ OI   | `https://x.e.com` w/ OI  | Main in `Site{https://e.com}`   <br>Sub in `Origin{https://x.e.com}` |
 | `https://e.com` w/ OI   | `https://x.e.com` w/o OI | Main in `Origin{https://e.com}` <br>Sub in `Site{https://e.com}`     |
+| `https://e.com` w/ OI   | `https://x.e.com` w/ OI  | Main in `Origin{https://e.com}` <br>Sub in `Origin{https://x.e.com}` |
 
 ## Three-document scenarios
 
@@ -30,6 +30,56 @@ Notes:
 | `https://e.com`<br>w/o OI  | `https://x.e.com`<br>w/o OI | `https://x.e.com`<br>w/ OI | Main in `Site{https://e.com}`<br>_If A loads first_: A and B both in `Site{https://e.com}` <br>If _B loads first_: A and B both in `Origin{https://x.e.com}` |
 | `https://e.com`<br>w/ OI   | `https://a.e.com`<br>w/o OI | `https://b.e.com`<br>w/ OI | Main in `Origin{https://e.com}`<br>A in `Site{https://e.com}`<br>B in `Origin{https://b.e.com}` |
 | `https://e.com`<br>w/o OI  | `https://a.e.com`<br>w/o OI | `https://b.e.com`<br>w/ OI | Main and A in `Site{https://e.com}`<br>B in `Origin{https://b.e.com}` |
+
+
+## Session history scenarios
+
+The previous scenarios illustrate some cases where the proposed algorithm ignores the origin isolation request because a pre-existing site-keyed agent cluster exists for a same-origin URL in the current frame tree. The following scenario illustrates a case where the session history contributes to this calculation.
+
+### Navigating a subframe
+
+* Main frame: `https://e.com` w/ OI
+* Subframe: `https://x.e.com` w/o OI
+* Outcome (per above): Main in `Origin{https://e.com}` / Sub in `Site{https://e.com}`
+* Historical map of agent cluster keys for this browsing context group: `(https, e.com, 443) => Origin{https://e.com}`, `(https, x.e.com, 443) => Site{https://e.com}`
+
+The user clicks a link in the `https://x.e.com` subframe which takes them to `https://e.org`.
+
+The user then clicks a button in the main frame which inserts a second subframe, pointing at `https://x.e.com`. But in the meantime the server operator has deployed origin isolation on `https://x.e.com`. Thus the scenario is now:
+
+* Main frame: `https://e.com` w/ OI
+* Subframe 1: `https://e.org` (with `https://x.e.com` in the session history)
+* Subframe 2: `https://x.e.com` w/ OI
+
+In this case, subframe 2 ends up keyed by `Site{https://e.com}`, because when loading `https://x.e.com`, we look up `(https, x.e.com, 443)` in the historical map of agent cluster keys, and see that it was originally allocated to `Site{https://e.com}`.
+
+This ensures that if the user navigates subframe 1 back, `https://x.e.com` again loads in `Site{https://e.com}`, as it did originally, and subframe 1 and subframe 2 are in the same `Site{https://e.com}` agent cluster. That is, we have avoided isolating same-origin pages from each other. And we've done so by using the rule of "first-seen agent cluster key wins", via the historical map of agent cluster keys.
+
+### Inserting iframes and saving JS references
+
+* Main frame: `https://e.com` w/ OI
+* Subframe: `https://e.org` w/o OI
+* Outcome (per above): Main in `Origin{https://e.com}` / Sub in `Site{https://e.org}`.
+* Historical map of agent cluster keys for this browsing context group: `(https, e.com, 443) => Origin{https://e.com}`, `(https, e.org, 443) => Site{https://e.org}`
+
+JavaScript code in the main frame goes through a variety of contortions:
+
+```js
+// Save a reference to the sub-frame window.
+window.savedFrame = frames[0];
+
+// Now remove it from the DOM.
+frames[0].frameElement.remove();
+```
+
+Some time later, JavaScript code inserts a new subframe, again pointing at `http://e.org`. But in the meantime the server operator has deployed origin isolation on `https://e.org`. Thus the scenario is now:
+
+* Main frame: `https://e.com` w/ OI
+* Subframe: `https://e.org` w/ OI
+
+Will the subframe get site-keyed, or origin-keyed?
+
+The answer is site-keyed. We only consult the historical map of agent cluster keys, which says that `(https, e.org, 443)` goes in `Site{https://e.org}`. The fact that the iframe was removed (so no corresponding browsing context exists in the browsing context group), or that the `Window` was saved (so that the realm/agent/agent cluster still exist) do not impact our decision-making process here. We always consult the historical map of agent cluster keys to make the decision.
 
 ## Worked-out nested scenario
 
