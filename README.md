@@ -226,7 +226,7 @@ So to conclude, the separate `Origin-Isolation` header can be used both by sites
 A [previous version](https://github.com/WICG/origin-isolation/tree/9d9156e1e5d355cd6156959247ea09eaabd64426) of this proposal included the ability for the web application to specify hints as to why it was requesting origin isolation, to better guide the browser in its resource allocation decisions. For example, a site could use
 
 ```
-Origin-Isolation: paralllelism
+Origin-Isolation: parallelism
 ```
 
 to indicate that it was mostly interested in isolating itself to gain better parallelism with same-site cross-origin pages that it would otherwise share resources with. Or a page could use
