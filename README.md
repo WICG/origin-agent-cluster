@@ -7,6 +7,8 @@
 
 If a developer chooses to give up these capabilities, then the browser has more flexibility in how it allocates resources like processes, threads, and event loops.
 
+This proposal has a corresponding [HTML Standard pull request](https://github.com/whatwg/html/pull/5545) currently under review.
+
 _Note: this proposal does not fully "isolate" the origin in every sense of the word. It focuses on agent cluster allocation issue. See [below](#further-isolation) for potential future work on further isolation._
 
 _Note: a [previous version](https://github.com/WICG/origin-isolation/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal was based on [origin policy](https://wicg.github.io/origin-policy/), but we have now decoupled them. See [below](#origin-policy) for more on this subject._
@@ -125,7 +127,7 @@ The consistency part of this algorithm has two interesting features:
 
 Both of these are consequences of a desire to ensure that same-origin sites do not end up isolated from each other, even in scenarios involving navigating back and forward.
 
-You can see a more full analysis of what results this algorithm produces in our [scenarios document](./scenarios.md).
+You can see a more full analysis of what results this algorithm produces in our [scenarios document](./scenarios.md), or you can view the [HTML Standard pull request](https://github.com/whatwg/html/pull/5545).
 
 As far as the web-developer–observable consequences of using origins for agent cluster keys, this will automatically cause `WebAssembly.Module` instances to no longer be shareable cross-origin, because of the agent cluster check in [StructuredDeserialize](https://html.spec.whatwg.org/multipage/structured-data.html#structureddeserialize). We'd also need to add a check to the [`document.domain` setter](https://html.spec.whatwg.org/multipage/origin.html#dom-document-domain) to make it no-op if the surrounding agent's agent cluster is origin-keyed.
 
