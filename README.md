@@ -1,9 +1,9 @@
 # Origin Isolation explainer
 
-**Origin isolation** refers to segregating cross-origin documents into separate [agent clusters](https://html.spec.whatwg.org/multipage/webappapis.html#integration-with-the-javascript-agent-cluster-formalism). Translated into developer-observable effects, this means:
+**Origin isolation** refers to segregating [cross-origin](https://html.spec.whatwg.org/multipage/origin.html#same-origin) documents into separate [agent clusters](https://html.spec.whatwg.org/multipage/webappapis.html#integration-with-the-javascript-agent-cluster-formalism). Translated into developer-observable effects, this means:
 
 * preventing the [`document.domain`](https://html.spec.whatwg.org/multipage/origin.html#relaxing-the-same-origin-restriction) setter from relaxing the same-origin policy; and
-* preventing `WebAssembly.Module`s from being shared with cross-origin (but same-site) documents.
+* preventing `WebAssembly.Module`s from being shared with cross-origin (but [same-site](https://html.spec.whatwg.org/multipage/origin.html#same-site)) documents.
 
 If a developer chooses to give up these capabilities, then the browser has more flexibility in how it allocates resources like processes, threads, and event loops.
 
@@ -55,6 +55,10 @@ The presence of the header, with the [structured headers](https://httpwg.org/htt
 
 * Attempts to set `document.domain` will do nothing, so cross-origin documents will not be able to synchronously script each other, even if they are same site.
 * Attempts to share `WebAssembly.Module`s to cross-origin documents via `postMessage()` will fail, even if those documents are same site.
+
+For example, if `https://example.com/` embedded `https://sub.example.com/` as an iframe or opened it as a popup, these two documents would normally be able to synchronously script each other, after both ran the JavaScript code `document.domain = "example.com"`. With origin isolation enabled, setting `document.domain` would instead be a no-op.
+
+Similarly, normally if `https://example.com/` embedded `https://sub.example.com/` as an iframe or opened it as a popup, they would be able to send each other `WebAssembly.Module` instances using `postMessage()`. With origin isolation enabled, the `postMessage()` call would instead throw an exception.
 
 (Note that these are only observable consequences in document contexts; for workers, [origin isolation has no effect](#more-detail-on-workers).)
 
