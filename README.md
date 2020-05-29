@@ -7,6 +7,8 @@
 
 If a developer chooses to give up these capabilities, then the browser has more flexibility in how it allocates resources like processes, threads, and event loops.
 
+Origin isolation only works in a [secure context](https://w3c.github.io/webappsec-secure-contexts/).
+
 This proposal has a corresponding [HTML Standard pull request](https://github.com/whatwg/html/pull/5545) currently under review.
 
 _Note: this proposal does not fully "isolate" the origin in every sense of the word. It focuses on agent cluster allocation issue. See [below](#further-isolation) for potential future work on further isolation._
@@ -116,7 +118,7 @@ Moving to origin isolation requires some observable changes, and thus the opt-in
 
 The specification for this feature in itself consists of two parts. One part is header parsing, which relies on the [Structured Headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) specification to do most of the work. The other is agent cluster keying, which is done by modifying the HTML Standard's [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map).
 
-In particular, when creating a document, we modify the algorithm to [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the presence of a valid `Origin-Isolation` header), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
+In particular, when creating a document, we modify the algorithm to [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the presence of a valid `Origin-Isolation` header on a [secure context](https://w3c.github.io/webappsec-secure-contexts/)), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
 
 The new algorithm will check if _origin_ has previously been placed in a site- or origin-keyed agent cluster within _group_, and if so, it will always return that same key, to stay consistent. Otherwise, it uses the _requestsIsolation_ boolean to determine whether to return _origin_, or the derived site.
 
