@@ -34,6 +34,7 @@ _Note: a [previous version](https://github.com/WICG/origin-isolation/tree/6c35a7
   - [Not using feature/document policy](#not-using-featuredocument-policy)
   - [Opt-in, instead of implicit, origin isolation](#opt-in-instead-of-implicit-origin-isolation)
   - [No-op `document.domain` setter instead of throwing](#no-op-documentdomain-setter-instead-of-throwing)
+  - [`window.originIsolationRestricted`](#windoworiginisolationrestricted)
 - [Adjacent work](#adjacent-work)
   - [`COOP` + `COEP`](#coop--coep)
 - [Potential future work](#potential-future-work)
@@ -59,6 +60,7 @@ The presence of the header, with the [structured headers](https://httpwg.org/htt
 
 * Attempts to set `document.domain` will do nothing, so cross-origin documents will not be able to synchronously script each other, even if they are same site.
 * Attempts to share `WebAssembly.Module`s to cross-origin documents via `postMessage()` will fail, even if those documents are same site.
+* The boolean `window.originIsolationRestricted` will be true, to provide an easy way of detecting these restrictions without having to try them.
 
 For example, if `https://example.com/` embedded `https://sub.example.com/` as an iframe or opened it as a popup, these two documents would normally be able to synchronously script each other, after both ran the JavaScript code `document.domain = "example.com"`. With origin isolation enabled, setting `document.domain` would instead be a no-op.
 
@@ -74,11 +76,13 @@ Goals:
 * Allow user agents to use various implementation strategies to isolate origins when circumstances allow, and the developer has opted in to origin isolation, thus potentially achieving benefits for performance, security, and memory metrics.
 * Ensure consistent web-developer-observable behavior regardless of implementation choices (such as process allocation) or the hints expressed by an origin. (Modulo side channels.)
 * Avoid situations where two same-origin pages with different isolation preferences are treated as cross-origin by the browser. ([See below](#the-browsing-context-group-scope-of-isolation).)
+* Allow web developers to introspect, using client-side scripting, whether their request for origin isolation has been honored. ([See below](#windoworiginisolationrestricted).)
 
 Non-goals:
 
 * Mandate process isolation or other implementation choices for user agents.
 * Give web developers visibility into process allocation.
+* Give guaranteed security benefits, of the sort that can enable powerful features. [`COOP` + `COEP`](#coop--coep) is more appropriate for that.
 
 Non-goals for now:
 
@@ -116,7 +120,7 @@ Moving to origin isolation requires some observable changes, and thus the opt-in
 
 ### Specification plan
 
-The specification for this feature in itself consists of two parts. One part is header parsing, which relies on the [Structured Headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) specification to do most of the work. The other is agent cluster keying, which is done by modifying the HTML Standard's [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map).
+The specification for this feature in itself consists of three parts. One part is header parsing, which relies on the [Structured Headers](https://httpwg.org/http-extensions/draft-ietf-httpbis-header-structure.html) specification to do most of the work. The other is agent cluster keying, which is done by modifying the HTML Standard's [agent cluster map](https://html.spec.whatwg.org/#agent-cluster-map). And the final part is the `window.originIsolationRestricted` boolean.
 
 In particular, when creating a document, we modify the algorithm to [obtain an agent cluster key](https://html.spec.whatwg.org/#obtain-agent-cluster-key). It takes as input an _origin_ of the realm to be created, _requestsIsolation_ (a boolean, derived from the presence of a valid `Origin-Isolation` header on a [secure context](https://w3c.github.io/webappsec-secure-contexts/)), and a browsing context group _group_. It outputs the [agent cluster key](https://html.spec.whatwg.org/#agent-cluster-key) to be used, which will be either a site or an origin.
 
@@ -128,6 +132,8 @@ The consistency part of this algorithm has two interesting features:
 * Even when origin isolation is requested, if there has previously been a site-keyed agent cluster with same-origin documents in the browsing context group, then we put the new document in that site-keyed agent cluster, ignoring the isolation request.
 
 Both of these are consequences of a desire to ensure that same-origin sites do not end up isolated from each other, even in scenarios involving navigating back and forward.
+
+Because this means that it's possible for the `Origin-Isolation` header to be present, but origin isolation restrictions to not apply, `window.originIsolationRestricted` exists to allow web developers to detect these mismatches (which are probably the result of server misconfiguration). That getter will only return `true` if the actual restrictions from origin isolation are in place. See [more below](#windoworiginisolationrestricted).
 
 You can see a more full analysis of what results this algorithm produces in our [scenarios document](./scenarios.md), or you can view the [HTML Standard pull request](https://github.com/whatwg/html/pull/5545).
 
@@ -210,6 +216,16 @@ We avoided this approach because of the complexities involved in the use of the 
 The proposal here is to make the `document.domain` setter do nothing (perhaps emitting a console warning) when used. Throwing an exception would be more semantically correct: it is unable to do the operation you are requesting.
 
 However, throwing would pose a potential migration burden for sites. Measurements from Chrome show that the `document.domain` setter is widely used ([~12% of page views](https://chromestatus.com/metrics/feature/timeline/popularity/739)), but only has an effect a smaller percentage of the time ([~0.28%](https://chromestatus.com/metrics/feature/timeline/popularity/2543) + [~0.52%](https://chromestatus.com/metrics/feature/timeline/popularity/2544) of page views). If we made it throw, then all of that 12% would need to update their code before they could take advantage of origin isolation. By making it do nothing, we instead confine the migration cost to the <1%.
+
+### `window.originIsolationRestricted`
+
+The `window.originIsolationRestricted` getter can feel a bit redundant. After all, the web developer should know whether origin isolation applies: they set the header themselves!
+
+However, as explained [above](#specification-plan), the `Origin-Isolation` header cannot always be respected. If a web developer has configured their server inconsistently, or if they are in the middle of changing their server configuration, other same-origin documents in the browsing context group might have different values for the header, and the overriding consistency requirement would then take over. Thus, `window.originIsolationRestricted` gives runtime insight into whether isolation succeeded, which can be useful for reporting, or for detecting misconfigurations.
+
+Finally, there are some subtleties around what this getter should return in various edge cases. As indicated by the name, it's currently designed to return true only if origin isolation causes _restrictions_ to occur. This means that it doesn't exist in workers, where the concept isn't applicable. And this means that it returns `false` for pages with opaque origins, or whose origin is an IP address or is in the public suffix list, because for those cases [the page's site is the same as its origin](https://html.spec.whatwg.org/#obtain-a-site).
+
+This was discussed in more detail in [#24](https://github.com/WICG/origin-isolation/issues/24), which contemplated other alternatives that give different answers in those edge cases (such as a `self.originIsolated` boolean that returned whether the surrounding agent cluster was origin-keyed or not). Ultimately we decided that whether or not origin isolation causes any restrictions was the most valuable signal for web developers.
 
 ## Adjacent work
 
