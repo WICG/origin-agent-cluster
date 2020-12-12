@@ -11,7 +11,7 @@ Origin-keyed agent clusters only work in a [secure context](https://w3c.github.i
 
 **This proposal was merged into the HTML Standard in [whatwg/html#5545](https://github.com/whatwg/html/pull/5545) under the original name "origin isolation", and renamed in [whatwg/html#6214](https://github.com/whatwg/html/pull/6214). The source of truth for its specification is now [in the HTML Standard](https://html.spec.whatwg.org/multipage/origin.html#origin-keyed-agent-clusters). This repository remains, in archived form, to provide the full explainer and supplementary documents. Issues can be filed [on whatwg/html](https://github.com/whatwg/html/issues).**
 
-_Note: a [previous version](https://github.com/WICG/origin-isolation/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal was based on [origin policy](https://wicg.github.io/origin-policy/), but we have now decoupled them. See [below](#origin-policy) for more on this subject._
+_Note: a [previous version](https://github.com/WICG/origin-agent-cluster/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal was based on [origin policy](https://wicg.github.io/origin-policy/), but we have now decoupled them. See [below](#origin-policy) for more on this subject._
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
@@ -230,7 +230,7 @@ The `window.originAgentCluster` getter can feel a bit redundant. After all, the 
 
 However, as explained [above](#specification-plan), the `Origin-Agent-Cluster` header cannot always be respected. If a web developer has configured their server inconsistently, or if they are in the middle of changing their server configuration, other same-origin documents in the browsing context group might have different values for the header, and the overriding consistency requirement would then take over. Thus, `window.originAgentCluster` gives runtime insight into whether the origin-keying request succeeded, which can be useful for reporting, or for detecting misconfigurations.
 
-There are some subtleties around what this getter should return in various edge cases. As indicated by the name, it's currently designed to return true whenever origin keying is in play. This means that it always returns `true` for  pages with opaque origins, because for those cases [the page's site is the same as its origin](https://html.spec.whatwg.org/#obtain-a-site). I.e., those cases can be considered automatically origin-keyed, regardless of the header. This was discussed in more detail in [#24](https://github.com/WICG/origin-isolation/issues/24) and [#31](https://github.com/WICG/origin-isolation/issues/31), which contemplated other alternatives that give different answers in these edge cases. See also [whatwg/html#5940](https://github.com/whatwg/html/issues/5940).
+There are some subtleties around what this getter should return in various edge cases. As indicated by the name, it's currently designed to return true whenever origin keying is in play. This means that it always returns `true` for  pages with opaque origins, because for those cases [the page's site is the same as its origin](https://html.spec.whatwg.org/#obtain-a-site). I.e., those cases can be considered automatically origin-keyed, regardless of the header. This was discussed in more detail in [#24](https://github.com/WICG/origin-agent-cluster/issues/24) and [#31](https://github.com/WICG/origin-agent-cluster/issues/31), which contemplated other alternatives that give different answers in these edge cases. See also [whatwg/html#5940](https://github.com/whatwg/html/issues/5940).
 
 Note that `window.originAgentCluster` is present even in non-secure contexts. This maintains consistency with `window.crossOriginIsolated`; both are useful for detecting what effects headers have on a page, even if the corresponding headers are only usable in secure contexts. (Also, note that in the edge cases mentioned above, the getter can return `true` even in a non-secure context.)
 
@@ -256,7 +256,7 @@ So to conclude, the separate `Origin-agent-Cluster` header can be used both by s
 
 ### Hints
 
-A [previous version](https://github.com/WICG/origin-isolation/tree/9d9156e1e5d355cd6156959247ea09eaabd64426) of this proposal included the ability for the web application to specify hints as to why it was requesting origin keying, to better guide the browser in its resource allocation decisions. For example, a site could use
+A [previous version](https://github.com/WICG/origin-agent-cluster/tree/9d9156e1e5d355cd6156959247ea09eaabd64426) of this proposal included the ability for the web application to specify hints as to why it was requesting origin keying, to better guide the browser in its resource allocation decisions. For example, a site could use
 
 ```
 Origin-Agent-Cluster: ?1;why=parallelism
@@ -274,7 +274,7 @@ We are setting aside this ability for now due to an initial lack of implementer 
 
 ### Origin policy
 
-A [previous version](https://github.com/WICG/origin-isolation/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal relied on [origin policy](https://wicg.github.io/origin-policy/). At this time, however, there remain a number of [open design questions](https://github.com/WICG/origin-policy/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+design+question%22) about origin policy, some with no clear path toward a solution. So the plan is to decouple origin-keyed agent clusters from origin policy for now, instead using the `Origin-Agent-Cluster` header design seen throughout the rest of this document.
+A [previous version](https://github.com/WICG/origin-agent-cluster/tree/6c35a736792526877b97ecb2250d017a790a2980) of this proposal relied on [origin policy](https://wicg.github.io/origin-policy/). At this time, however, there remain a number of [open design questions](https://github.com/WICG/origin-policy/issues?q=is%3Aissue+is%3Aopen+label%3A%22open+design+question%22) about origin policy, some with no clear path toward a solution. So the plan is to decouple origin-keyed agent clusters from origin policy for now, instead using the `Origin-Agent-Cluster` header design seen throughout the rest of this document.
 
 That said, we believe that origin policy would still be an optimal deployment vehicle for many things currently delivered as headers. This includes not only `Origin-Agent-Cluster`, but also `Content-Security-Policy`, `Feature-Policy`, `Document-Policy`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, and more. The same [arguments](https://github.com/WICG/origin-policy#the-problems-and-goals) as to why these would be best configured on an origin-wide basis apply to all of these headers. So for now, the plan is to develop origin-keyed agent clusters in the same way as the others, but also to add it to the list of candidates for integration into origin policy, once origin policy becomes ready.
 
